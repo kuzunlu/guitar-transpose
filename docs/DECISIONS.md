@@ -1,0 +1,39 @@
+# Decisions
+
+One line per decision, newest last. Numbers are in `docs/RESULTS.md`.
+
+- 2026-11-12 — No C++ compiler on the user's machine (Visual Studio has no C++ workload, Build Tools install was cancelled). The algorithm was proven in Python + NumPy first (`reference/`). The C++ code is a port of that reference.
+- 2026-11-12 — Bet #1 (bin-moving phase vocoder with a short synthesis window, PLAN 5.3) is rejected. With a 2.7 ms output window the "now" information of each partial is spread over about ±750 Hz, wider than the spacing of guitar partials, so neighbours get mixed. Wobble 4–9 dB on notes and chords.
+- 2026-11-12 — Bet #2 in its first form (mask split through the STFT, PLAN 5.4) is rejected with it, because it uses the same bin-moving tonal path.
+- 2026-11-12 — The hand-over formula (per-partial phase turn = −ω × delay of the residual path) is proven and kept.
+- 2026-11-12 — Live engine is the predictive engine (PLAN 5.6): measure partials with a long window, predict them forward as sines, subtract, varispeed the rest. No audio goes through the spectrum.
+- 2026-11-12 — Reported Live latency is the varispeed rest delay: 96 samples down, 336 samples up (at 48 kHz). The plan's earlier 140 / 380 no longer apply.
+- 2026-11-12 — Analysis window for the predictive engine: 8192 samples, rise 6144, fall 2048, both smooth. It does not affect latency.
+- 2026-11-12 — Splice search picks true peaks of the match curve with sub-sample refinement. Picking the smallest lag within 2 % of the best (the first idea) made each splice slightly early, which is a pitch error.
+- 2026-11-12 — Wobble is only measured on partials that have no other partial within 25 Hz.
+- 2026-11-12 — Engine interface in the reference is mono. Stereo linking is left for the C++ port.
+- 2026-11-12 — Chunk centre index for the low-delay STFT is N − (S+1)/2, not N − S/2 as first written in the plan.
+- 2026-11-12 — User answers: DAW is Ableton Live, format VST3 only. Range is 6- and 7-string; no 8-string, no bass. The "Range" parameter is dropped.
+- 2026-11-12 — 7-string low B (61.7 Hz) and drop A (55 Hz) tested in the reference: same quality as low E. Window sizes stay.
+- 2026-11-12 — Build on Visual Studio Build Tools 2026 (stable), not on the expired Insiders install.
+- 2026-11-12 — C++ workload installed (second try; the first failed while the installer updated itself, but still returned exit code 0). Toolchain verified with a CMake + Ninja test build: MSVC 14.51, SDK 10.0.26100, CMake 4.3.1. Lesson: never trust the installer's exit code; check that cl.exe and cmake.exe exist.
+- 2026-11-12 — JUCE 9.0.5 chosen (newest, a bug-fix release over 9.0.4). Pinned by zip URL + SHA-256, not by git clone, because a full JUCE clone is large and a commit hash cannot be fetched shallow.
+- 2026-11-12 — Build with CMake + Ninja through `scripts\build.bat` (it loads the MSVC settings first). No Projucer.
+- 2026-11-12 — Plugin accepts mono→mono or stereo→stereo only. Guitar DI is mono; Ableton usually gives stereo.
+- 2026-11-12 — `COPY_PLUGIN_AFTER_BUILD` is off: copying into `C:\Program Files\Common Files\VST3` needs admin rights, and the user must approve that.
+- 2026-11-12 — Placeholder identity: "KU Audio" / "Guitar Transpose" / `Kuzu` / `Gtrp` / `com.kuaudio.guitartranspose`. To be replaced by the user's choice before real use.
+- 2026-11-13 — Signalsmith Stretch 1.4.0 + Linear 0.6.4 pinned by zip + SHA-256. Library warnings are silenced only around its `#include` (`#pragma warning(push, 0)`); our code stays at /W4.
+- 2026-11-13 — Temporary Live engine: Signalsmith with 40 ms blocks / 10 ms interval (1920 samples latency). To be replaced by the ported varispeed in M3.
+- 2026-11-13 — Mode change swaps engines and calls `setLatencySamples` from the audio thread; JUCE passes it on to the host. A click at the switch is accepted.
+- 2026-11-13 — Timbre and Pickup Freq parameters are not added until M6, so the UI has no knobs that do nothing.
+- 2026-11-13 — User wants an offline "Perfect" mode (slow is fine, post-processing only). Shape: file in, file out (command line + Standalone page), not a live plugin mode. Research in the Python reference first. PLAN 5.8 and M9.
+- 2026-11-13 — Look-ahead experiment (engine L) shows 2–5× cleaner chords but pre-echo at attacks. Offline engine must tie partial starts to attacks. Engine L is also a candidate for the plugin's Studio mode (85 ms).
+- 2026-11-13 — M9 started before M3, at the user's choice. Offline engine in `reference/tp_offline.py` (PLAN 5.8.4).
+- 2026-11-13 — Synthetic palm mutes now choke the previous note at each pick (like a real string). Older palm-mute numbers are not comparable.
+- 2026-11-13 — Added the "fine" measure (2.9 Hz grid). Short-window "spec" also scores the phase between partials of different strings, which is probably not audible; "fine" does not.
+- 2026-11-13 — Beat split with the matrix pencil method, used only where 2–3 decaying sines explain a track's curve to 10 %. Fixed a sign bug on the way (conjugated singular vectors mirror the frequencies).
+- 2026-11-13 — One phase reference per pick, shared by all partials of that pick. Single note at +2: 0.25 → 0.04.
+- 2026-11-13 — Cut rule: model-based (do undisturbed decaying sines explain the curve across the cut?), not level-based. Level-based took palm-mute re-picks for ring-throughs.
+- 2026-11-13 — "Birth picks" tried and switched off (no gain). "Ring-on" split kept on (fires rarely, no harm measured).
+- 2026-11-13 — `render.py` has engine `O`. Its output is shifted back to zero latency.
+- 2026-11-13 — Rule for every engine: `reset()`, `latencySamples()` and `process()` must be safe before `prepare()` and with 0 channels. Tested in `tests/SignalsmithEngineTests.cpp`.

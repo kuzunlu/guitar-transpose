@@ -1,0 +1,17 @@
+# build output
+build/
+
+# test audio is large and may hold real recordings; keep it out of git
+audio/
+*.wav
+
+# python
+__pycache__/
+*.pyc
+
+# editors
+.vs/
+.vscode/
+
+# downloaded tools (pluginval etc.)
+tools/bin/
