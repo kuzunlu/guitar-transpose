@@ -150,3 +150,140 @@ Speed: about 15 s of Python work per 1 s of six-string chord.
 | Steadiness test `pred_phase_tol` 0.5 / 4.0 / off | Chords 0.55–1.43 / 0.34–0.58 / 0.25–0.49 dB. Vibrato spec 0.68 / 0.91 / 0.98. Default 4.0. |
 | Fit gate off | Hand-mute leftover −5.7 dB against −11.4 dB with the gate (at tol 1.5). |
 | Engine B, synthesis length 128 → 512 | Wobble at 220 Hz note 7 dB → 0.0 dB. Shows that bin-moving needs a long output window. |
+
+## 2026-11-24 — Doubler, Python reference (PLAN 16)
+
+`python reference/double_tests.py`, defaults of PLAN 16.3, 48 kHz. First table: original untouched (copies
+always late). The second table, after it, is the current design (original is a timing-only take). Synthetic guitar with pick noise, through a
+tanh amp and a 5 kHz cab low-pass. L = original side, R = double side (for "ours": the copy; latency 0).
+
+| scenario | system | coh low | mid | high | mono dB | bal dB | lag ms | spread ms | picks |
+|----------|--------|---------|-----|------|---------|--------|--------|-----------|-------|
+| chug   | fixed 12 ms | 0.80 | 0.78 | 0.77 | +2.76 | +0.01 | +12.0 | | |
+| chug   | ours        | 0.14 | 0.05 | 0.10 | −0.11 | −0.12 | +1.9 | 2.0 | 23/24 |
+| chug   | true double | 0.10 | 0.03 | 0.02 | −0.15 | +0.16 | +6.7 | | |
+| chords | fixed 12 ms | 0.82 | 0.80 | 0.77 | +0.07 | +0.00 | +12.0 | | |
+| chords | ours        | 0.31 | 0.04 | 0.05 | −1.07 | +0.47 | +3.3 | 2.1 | 4/4 |
+| chords | true double | 0.11 | 0.03 | 0.05 | −0.32 | +1.23 | +9.6 | | |
+| lead   | fixed 12 ms | 0.84 | 0.78 | 0.78 | −0.67 | +0.00 | +12.0 | | |
+| lead   | ours        | 0.60 | 0.28 | 0.08 | +0.58 | −1.10 | +4.6 | 2.4 | 1/12 |
+| lead   | true double | 0.39 | 0.19 | 0.06 | +0.49 | +0.41 | +18.2 | | |
+
+"lag ms" of the true double is not reliable: the parts repeat, so the envelope match can lock onto a neighbour note.
+
+Velvet-noise decorrelator (dropped), chords at default timing: coherence 0.21 / 0.04 / 0.06 at decorr 0, 0.1, 0.2
+and 0.4 alike; peak of the copy against the input 1.22× / 1.55× / 1.94× / 2.50×. Tight chords (timing 1 ms,
+pitch 1 cent): mono +2.38 / +2.18 / +1.86 dB at decorr 0 / 0.4 / 1.0, coherence unchanged.
+
+Pick detection after distortion: `detect_onsets` (full band, ratio 6) finds 1/24 chug, 1/4 chord, 1/12 lead picks.
+`detect_picks` (above 1.5 kHz, ratio 4) finds 23/24, 4/4, 1/12. Spectral flux (512 / 64) was worse: 50–160 false
+hits on distorted chords.
+
+Original as a timing-only take (current design). "copy 1st" = share of picks where the copy lands before the original.
+
+| scenario | coh low | mid | high | mono dB | bal dB | spread ms | copy 1st | picks |
+|----------|---------|-----|------|---------|--------|-----------|----------|-------|
+| chug   | 0.05 | 0.06 | 0.07 | +0.58 | +0.14 | 2.8 | 50 % | 23/24 |
+| chords | 0.16 | 0.09 | 0.07 | +0.16 | +0.00 | 1.4 | 25 % | 4/4 |
+| lead   | 0.59 | 0.22 | 0.05 | −0.64 | +0.09 | 2.1 | 75 % | 1/12 |
+
+Comb inside one speaker (cepstrum peak of L against the input, 0.3–30 ms; higher = more flanger / phaser).
+User heard flanger in quad. Defaults, synthetic parts:
+
+| part | ours quad, no velvet | no pitch | timing 25 ms | before amp | band delays 2 ms | velvet 1.0 (15 ms) | true quad |
+|------|------|------|------|------|------|------|------|
+| chug   | 0.149 | 0.159 | 0.120 | 0.142 | 0.095 | 0.074 | 0.059 |
+| chords | 0.156 | 0.183 | 0.105 | 0.165 | 0.086 | 0.067 | 0.049 |
+| lead   | 0.138 | 0.144 | 0.106 | 0.114 | 0.098 | 0.083 | 0.057 |
+
+Peak of a copy against the input with velvet 1.0: 15 ms 1.9–2.4×, 8 ms 2.2×, 4 ms 1.9–2.0×; above 1500 Hz instead
+of 600 Hz: 1.7–2.0× but comb 0.09–0.12.
+
+Overtone phase drift on the copies (`scratchpad` experiment, not in the engine). Quad comb / peak of a copy:
+
+| part | plain | velvet 1.0 | STFT 2048/256, drift 1 Hz | low-delay S 128 | low-delay S 256 | true quad |
+|------|------|------|------|------|------|------|
+| chug   | 0.149 | 0.074 | 0.060 / 2.2× | 0.084 / 2.4× | 0.078 / 2.3× | 0.059 |
+| chords | 0.156 | 0.067 | 0.053 / 2.2× | 0.074 / 2.5× | 0.069 / 2.2× | 0.049 |
+| lead   | 0.138 | 0.083 | 0.066 / 2.1× | 0.166 / 2.2× | 0.109 / 2.6× | 0.057 |
+
+Drift 0.3 / 1 / 3 Hz on the full STFT: chug 0.079 / 0.060 / 0.056, chords 0.060 / 0.053 / 0.051. Per bin
+(no smoothing) as good as smooth 6.
+
+## 2026-11-24 — Doubler Studio mode (PLAN 16.7)
+
+`python reference/studio_tests.py`. Spread = std of take 2 against take 1 at the attacks.
+
+| part | system | coh mid | mono dB | comb | copy 1st | spread ms | picks |
+|------|--------|---------|---------|------|----------|-----------|-------|
+| chug   | live 2   | 0.05 | +0.59 | 0.027 | 50 % | 2.9 | 23/24 +1 |
+| chug   | studio 2 | 0.05 | −0.13 | 0.024 | 33 % | 4.8 | 24/24 +1 |
+| chug   | true 2   | 0.03 | −0.15 | 0.000 | | | |
+| chug   | live 4   | 0.06 | +1.37 | 0.071 | | | |
+| chug   | studio 4 | 0.06 | +0.31 | 0.058 | | | |
+| chug   | true 4   | 0.05 | +0.39 | 0.059 | | | |
+| chords | live 2   | 0.09 | +0.34 | 0.015 | 25 % | 1.4 | 4/4 +2 |
+| chords | studio 2 | 0.07 | −0.72 | 0.017 | 0 % | 1.7 | 4/4 +0 |
+| chords | true 2   | 0.02 | +0.20 | 0.000 | | | |
+| chords | live 4   | 0.13 | +0.75 | 0.072 | | | |
+| chords | studio 4 | 0.09 | +0.38 | 0.053 | | | |
+| chords | true 4   | 0.04 | +0.68 | 0.049 | | | |
+| lead   | live 2   | 0.20 | +0.47 | 0.038 | 67 % | 2.7 | 2/12 +0 |
+| lead   | studio 2 | 0.16 | +0.24 | 0.023 | 42 % | 4.1 | 12/12 +1 |
+| lead   | true 2   | 0.18 | −0.57 | 0.000 | | | |
+| lead   | live 4   | 0.27 | +0.91 | 0.074 | | | |
+| lead   | studio 4 | 0.16 | +1.09 | 0.061 | | | |
+| lead   | true 4   | 0.20 | +0.77 | 0.057 | | | |
+
+Studio quad presets, comb chug / chords / lead: default 0.062 / 0.053 / 0.062, tight (3 ms, 2 cents) 0.063 /
+0.052 / 0.064, loose (20 ms, 12 cents) 0.065 / 0.057 / 0.072, extreme (all max, drift 3) 0.069 / 0.062 / 0.092.
+Tight quad mono sum is high on chug (+2.26 dB): the takes are close in time and the low end (below 150 Hz, no drift)
+adds up.
+
+Studio after the user heard phaser + left lean. Old `phase_drift` (per bin, never reset): copy level −1.0 / −1.3 /
+−2.3 dB (chug / chords / lead); chug double attack sharpness L 6.5, R 1.6 dB (input 6.4); smear before the attack
+L −5.9, R −2.7 dB (input −6.1). Studio double L−R +0.74 / +1.59 / +3.14 dB.
+
+`phase_drift_notes` (phase locked, reset at every attack), Studio quad, comb / L−R dB / attack L / R:
+
+| attack detune | chug | chords | lead |
+|------|------|------|------|
+| none (reset only) | 0.127 / −0.21 / 3.0 / 2.6 | 0.068 / +1.21 / 1.1 / 2.1 | 0.090 / +0.85 / 0.8 / 0.6 |
+| 8 cents, 40 ms | 0.082 / −0.25 / 3.6 / 2.1 | 0.063 / +1.26 / 1.6 / 1.6 | 0.078 / −0.55 / 0.5 / 0.7 |
+| **15 cents, 40 ms (chosen)** | 0.068 / −0.20 / 4.1 / 2.2 | 0.063 / +1.33 / 0.8 / 2.0 | 0.077 / −0.61 / 0.5 / 1.1 |
+| 25 cents, 40 ms | 0.065 / −0.13 / 4.7 / 1.7 | 0.062 / +1.40 / 1.4 / 5.9 | 0.080 / −0.99 / 0.6 / 1.1 |
+| 40 cents, 20 ms | 0.062 / −0.12 / 4.6 / 1.8 | 0.063 / +1.39 / 0.5 / 6.2 | 0.076 / −0.72 / 0.9 / 0.5 |
+| true quad | 0.059 / −0.34 / 2.8 / 3.6 | 0.049 / −0.21 / 1.2 / 4.1 | 0.057 / +1.78 / 0.7 / 0.5 |
+
+Studio double with reset + 8 cents: L−R −0.16 / +0.73 / +0.12 dB, attack L / R chug 7.6 / 6.7 dB.
+
+## 2026-11-24 — Doubler "analyse and play again" on the DI (PLAN 16.8)
+
+`python reference/resynth_tests.py` (about 7 minutes). Each take through its own amp (tanh, drive 6 / DI peak, cab
+5 kHz). Analysis check: error −252 … −264 dB, residual −25.3 / −23.7 / −26.0 dB of the input (chug / chords / lead).
+
+| part | system | coh mid | mono dB | comb | L−R dB | atk L / R |
+|------|--------|---------|---------|------|--------|-----------|
+| chug   | bend 2      | 0.04 | +0.10 | 0.030 | +0.02 | 6.6 / 4.8 |
+| chug   | resynth 2   | 0.03 | +0.17 | 0.030 | +0.02 | 6.6 / 3.3 |
+| chug   | true 2      | 0.03 | −0.17 | 0.000 | +0.02 | 6.4 / 4.8 |
+| chug   | bend 4      | 0.06 | +0.43 | 0.069 | +0.02 | 3.8 / 1.9 |
+| chug   | resynth 4   | 0.06 | +0.32 | 0.068 | −0.38 | 2.9 / 3.0 |
+| chug   | true 4      | 0.06 | +0.41 | 0.057 | +0.14 | 4.6 / 3.1 |
+| chords | bend 2      | 0.03 | +0.19 | 0.023 | +0.48 | 1.3 / 3.0 |
+| chords | resynth 2   | 0.04 | +0.19 | 0.023 | +0.02 | 1.3 / 0.3 |
+| chords | true 2      | 0.07 | +0.68 | 0.000 | −0.10 | 1.2 / 16.6 |
+| chords | bend 4      | 0.06 | +0.86 | 0.058 | +0.23 | 3.2 / 1.0 |
+| chords | resynth 4   | 0.08 | +0.41 | 0.061 | +0.23 | 1.7 / 1.8 |
+| chords | true 4      | 0.07 | +0.71 | 0.058 | −0.29 | 2.9 / 1.3 |
+| lead   | bend 2      | 0.18 | −0.98 | 0.027 | +0.04 | 0.7 / 1.2 |
+| lead   | resynth 2   | 0.18 | +0.05 | 0.027 | −0.17 | 0.7 / 1.2 |
+| lead   | true 2      | 0.21 | +0.13 | 0.000 | +0.06 | 0.9 / 0.6 |
+| lead   | bend 4      | 0.19 | +0.57 | 0.073 | −0.06 | 1.0 / 0.8 |
+| lead   | resynth 4   | 0.17 | +0.88 | 0.108 | +0.68 | 0.6 / 1.0 |
+| lead   | true 4      | 0.17 | +0.25 | 0.064 | −0.37 | 0.5 / 0.2 |
+
+Lead quad, no timing changes: new phases + new residual 0.098 / 0.106 / 0.101 (3 seeds); new phases + old residual
+0.067 / 0.065 / 0.063; old phases + new residual 0.060. Noise hop 64 / 32 / 16: 0.098 / 0.100 / 0.099; the comb
+peak sits at 3.4–3.5 ms (median), the period of the lead notes, so it is not a delay comb.
+

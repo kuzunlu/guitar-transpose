@@ -901,3 +901,187 @@ Each milestone ends with: results in `docs/RESULTS.md`, a short report to the us
 - Geraint Luff, "The Design of Signalsmith Stretch" (2023). https://signalsmith-audio.co.uk/writing/2023/stretch-design
 - Cycfi Research blog: "DSP Adventures: Zero Latency Pitch Shifting" (2026-06) and "BACF Pitch Shifter" (2026-11). https://www.cycfi.com/2026/11/bacf-pitch-shifter/
 - Riou et al., "PESTO" (arXiv 2508.01488). Causal neural pitch detector.
+
+---
+
+## 16. Doubler and first release (user request 2026-11-23)  **[PYTHON REFERENCE DONE 2026-11-24 — waiting for the user to listen]**
+
+Goal: make a real-sounding double or quad take of a guitar, not a fixed-delay copy (the Neural DSP way).
+A real second take differs in **timing** (per note, early and late), **pitch** (a few cents per note),
+**level and attack**, and **tone**. A fixed delay has none of these, and it comb-filters in mono.
+
+### 16.1 User answers
+- Placement: after the amp sim (input is already amped, often stereo).
+- One plugin with two sections: Transpose → Doubler, each with on/off.
+- Original stays in the output as take 1 (hard left). Copies are takes 2–4.
+- Latency: the smallest the processing allows, and it is **not a parameter** (user, 2026-11-24). The doubler
+  reports **12 samples** (0.25 ms): the fixed part every note has. The human timing on top is the effect itself,
+  so it is not reported (user, 2026-11-24). Every take, **the original included**, lands from 0.25 ms (what the interpolator needs) up to the
+  timing spread after the input, drawn anew per note. So the order of the takes is mixed note by note: no take
+  is always first (user chose this "option B", 2026-11-24). The original gets timing changes only, no pitch,
+  level or tone change. Every timing setting must have a **wide range**, and the amount of
+  randomness must be adjustable, "just like a human".
+- Visual: Stage (one glowing speaker per take at its pan spot, with live ms and cents) + Takes (scrolling
+  waveform lane per take, note starts marked early/late) + a mono-safety strip.
+- Look: same colours, fonts and knob style as `C:\guitar-lab`.
+- Identity: company **"Kursat"** (Ableton groups by this), product **"Guitar Tools"**, manufacturer code `Kuzu`,
+  new plugin code (never released before, so changing now is safe). Bundle id to match.
+- Transpose ships as it is, marked "beta" (Live mode is still the Signalsmith stand-in, 40 ms).
+- First release: **v0.1.0**, setup .exe + zip, installer like Guitar Lab (`C:\guitar-lab\installer\GuitarLab.iss`, Inno Setup).
+  No GitHub Actions (user, 2026-11-26): a local PowerShell script builds (CMake), makes the setup .exe (`iscc`)
+  and publishes it with `gh release create`. Ask the user before tagging, pushing or running it.
+
+### 16.2 Engine (one per copy)
+- A **varispeed delay line** (reuse `Varispeed` from `reference/tp_ref.py`): reading slightly faster or slower
+  gives a pitch offset of a few cents with no FFT and no latency.
+- At every clear pick (`detect_picks`: power above 1.5 kHz, 1 ms against 30 ms, ratio 4), each copy draws a
+  **new timing, pitch, level and tone** and jumps there with a 64-sample crossfade, before the attack reaches it.
+  `detect_onsets` from the transpose engine finds almost nothing after distortion (1 of 24 chug picks).
+- Between picks, every ~300 ms (random 150–450), a copy moves to a new timing and pitch with a **matched splice**
+  (jump by whole waveform periods, likeness ≥ 0.8, else it waits). So a missed pick costs nothing.
+- When a long note drifts more than 5 ms from its timing, a matched splice brings it back
+  (30 cents ≈ 17 ms drift per second).
+- Timing = slow drift (random walk over notes: rushing/dragging) + per-note jitter.
+- Per-pick level change and tone change (gain above 1.5 kHz). Both start when the pick reaches the copy's
+  read head, not when it enters the plugin.
+- A **velvet-noise filter** above 600 Hz on every copy (15 ms, 30 pulses, fixed per take). It scrambles the
+  copy's fine detail, so two takes in one speaker stop cancelling at regular frequencies (see 16.6).
+- Stereo input: copies on the left are made from the left channel, copies on the right from the right channel
+  (keeps the two cabs' tone difference). Mono input: all from the one channel.
+- Randomness is seeded (a "New takes" button changes the seed), so the same audio renders the same every time.
+- The original is a take with timing changes only. Its sound is untouched: with timing spread 0 it is the
+  input delayed by exactly 12 samples (tested). Every take's timing is folded to the late side (none can be early).
+
+### 16.3 Parameters (start values; ranges are wide on purpose)
+| Name | Range | Default |
+|------|-------|---------|
+| Doubler on | off/on | off |
+| Takes | 2 / 3 / 4 | 2 |
+| Timing spread | 0 … 40 ms | 8 ms |
+| Timing jitter (how much it changes note to note) | 0 … 100 % | 60 % |
+| Timing drift (slow rush/drag) | 0 … 100 % | 30 % |
+| Pitch spread | 0 … 30 cents | 6 |
+| Pitch jitter (per note) | 0 … 100 % | 60 % |
+| Pitch wander (inside a note) | 0 … 10 cents | 1 |
+| Level spread (per note) | 0 … 6 dB | 1 |
+| Tone spread | 0 … 100 % | 30 % |
+| Decorrelation (velvet filter on the copies) | 0 … 100 % | 100 % |
+| Width | 0 … 100 % | 100 % |
+| Copies level | −24 … +6 dB | 0 |
+| New takes (seed) | button | — |
+
+Takes layout: 2 = original L, copy R. 3 = + copy centre. 4 = original L, copy R, copy L and copy R at Width × 80 %.
+No lean: the original is late as often as the copies, so no side is always first.
+
+### 16.4 Order of work
+1. **[DONE 2026-11-24]** Python reference `reference/tp_double.py`, tests `double_tests.py`, listening tool
+   `render_double.py`. Results in 16.6. **Next: the user listens on real amped tracks.**
+2. C++ `DoublerEngine` in tp_core + unit tests (safe before `prepare()`, no allocation in `process`,
+   reported = measured latency).
+3. Plugin: rename identity, parameters, sections, latency = transpose latency + x.
+4. UI in the Guitar Lab look, with Stage + Takes view.
+5. Installer + local release script + README/manual, v0.1.0. Ask before tag and push.
+
+### 16.5 Open
+- User asked what happens in Neural DSP with the two cab mics panned hard L/R and the Doubler on. Their manual
+  says the Doubler only works in Mono input mode; how it treats the panned mics is not documented. Offer: user
+  renders short clips (doubler off / on, mics centred / hard L-R) and we measure delay, pitch and correlation.
+
+### 16.6 Results of the reference (2026-11-24)
+Synthetic guitar with pick noise, through a simple amp (tanh + cab low-pass). Defaults of 16.3.
+"coh" = how alike L and R are over time (1 = copy, 0 = unrelated). "mono" = L+R against L and R apart
+(+3 dB = copies, comb filter in mono). Full table in `docs/RESULTS.md`.
+
+| Part | Fixed 12 ms copy: coh mid / mono | Ours: coh mid / mono | True second take: coh mid / mono |
+|------|------|------|------|
+| Chug (palm-muted 16ths) | 0.78 / +2.8 dB | 0.06 / +0.6 dB | 0.03 / −0.2 dB |
+| Power chords | 0.80 / +0.1 dB | 0.09 / +0.2 dB | 0.03 / −0.3 dB |
+| Single-note lead | 0.78 / −0.7 dB | 0.22 / −0.6 dB | 0.19 / +0.5 dB |
+
+The copy lands before the original on 50 % of chug picks (24), 25 % of chord picks (4) and 75 % of lead picks (12).
+
+- **User listening (2026-11-24): quad sounds like a flanger / phaser.** Cause: every take is the same waveform,
+  shifted. Two of them in one speaker cancel at *regular* frequencies (a comb), and the varying delay makes the
+  comb move. Real takes have new fine detail (overtone phases, pick and string noise), so they cancel at random,
+  changing spots. Coherence over time could not see this. New measure: "comb" = cepstrum peak of one channel
+  against the input (0.3–30 ms).
+- Comb in quad: ours 0.14–0.16, true quad 0.05–0.06. No pitch change: no better (the comb stops moving but
+  stays). Timing 25 ms: 0.11–0.12. Doubling before the amp (amp per take): no better, because distorting a
+  delayed signal is the same as delaying the distorted one. Band-split delays (4 bands, 0–2 / 0–5 ms): 0.08–0.10,
+  peaks 3×. **Velvet filter at 1.0, 15 ms: 0.07–0.08, peaks about 2×** (8 ms: 0.08–0.09; 4 ms: 0.11).
+- The velvet filter was first dropped because coherence did not move (a fixed filter keeps a fixed relation);
+  it came back for the comb. It is on by default.
+- Proof of idea (offline, 2026-11-24): each overtone of a copy gets its own slow phase drift (STFT 2048 / 256,
+  random drift field smooth over 6 bins, about 1 Hz detune, nothing below 150 Hz). Quad comb 0.060 / 0.053 / 0.066
+  = true quad (0.059 / 0.049 / 0.057). So new fine detail is the right fix. Peaks about 2.2×, like velvet.
+- The same drift through the low-delay STFT (5.3.1, N 2048, S 128 or 256, 2.7 / 5.3 ms) is **not** better than
+  velvet: 0.08 / 0.07 and lead 0.17 (S 128, worse than plain) or 0.11 (S 256). The short output window blurs the
+  frequency detail.
+- Left for low latency: the drift on the predictive engine's sine tracks (5.6): each track gets its own small
+  detune, new at every pick, starting in line with the residual path. Big job and needs 5.6.5 problems solved
+  on distorted input. Or a mixing mode with the full STFT drift (about 40 ms latency, compensated by Ableton).
+- Open: lead picks are found 1 of 12 times (sustained high notes keep the highs busy). The matched splices carry it,
+  but a better pick detector would make lead takes more real. Try first: ratio on the rise of the high-band level
+  in dB, with a slower reference.
+- Not tested yet: real amped recordings, stereo input with two different cabs, 44.1 / 96 kHz.
+
+### 16.7 Studio mode (user request 2026-11-24)  **[PYTHON REFERENCE DONE — waiting for the user to listen]**
+User: track in Live as one guitar, play back as a high-quality quad. In Studio, **latency is no concern, only the
+quality of the algorithms**. Ableton removes the latency on playback (PDC).
+
+- One shared Mode switch for the whole plugin (Live / Studio), as Transpose already has. Proposed to the user,
+  not yet confirmed. When both sections are on, latencies add up.
+- If the host renders offline (JUCE `isNonRealtime()`), use Studio even when Live is chosen. Not decided yet.
+- Code: `reference/tp_double_studio.py`, tests `reference/studio_tests.py`, listening `render_double.py mode=studio`.
+- Steps:
+  1. **Pick finder with look-ahead** (`find_picks`): rise of the level above 1.5 kHz in dB plus spectral flux,
+     each divided by its running median (±300 ms), summed. A pick is the highest within ±25 ms and more than 2.5
+     above the running median. Found 24/24, 4/4, 12/12 (2 false in all); times up to 2.7 ms late.
+  2. **Note-anchored timing** (`StudioTake`): the grid sits 50 ms back (`LOOKAHEAD_MS`), so takes land early or
+     late around it, the original included. The jump to a note's timing ends 4 ms before the found pick, so the
+     attack is never crossfaded. If the waveform lines up well (≥ 0.9) within 2 ms of the timing, it lands there
+     (seamless); else exactly. No timing moves between picks.
+  3. **Overtone drift** on the copies (`phase_drift`): STFT 2048 / 256, random drift rate per bin, smooth over 6
+     bins, about 1 Hz, nothing below 150 Hz. Replaces the velvet filter. Its knob scales the speed; dry and
+     drifted are never mixed (that would make a comb).
+- Reported latency: 50 ms + one 2048 frame in real time (about 93 ms at 48 kHz).
+- Results: quad comb 0.058 / 0.053 / 0.061 against true quad 0.059 / 0.049 / 0.057 (Live 0.071–0.074). Tight
+  settings stay at 0.05–0.06 too. Timing spread between takes 4.1–4.8 ms. Full table in `docs/RESULTS.md`.
+- Open: "copy first" was 33 % / 0 % / 42 % on parts of only 24 / 4 / 12 picks; check on a longer part.
+  Extreme settings on the lead: comb 0.092. Real amped recordings not tested yet.
+- **User listening (2026-11-24): still phaser-like, and the image leans left.** Measured: the copies' attacks
+  were smeared (chug double: attack sharpness L 6.5 / R 1.6 dB, input 6.4) and the copies lost 1.0–2.3 dB in
+  `phase_drift`. Cause: every bin drifted on its own, so the bins of one overtone drifted apart over a note.
+  Fix (`phase_drift_notes`): (a) phase locking, every bin turns with its overtone peak; (b) each note processed
+  on its own, drift starts at 0 just before the attack (attack untouched), new drift field per note; (c) attack
+  detune: each overtone starts 15 cents off at random and settles over 40 ms, like a plucked string, so short
+  notes get new detail too. After: balance −0.2 … +0.7 dB on doubles, copy attacks as sharp as the original,
+  quad comb 0.068 / 0.063 / 0.077 (true quad 0.059 / 0.049 / 0.057).
+- `studio_tests.py` now also measures balance (L−R dB) and attack sharpness per side.
+- Ideas for later, if listening asks for more: drift tied to tracked overtones (peak-locked) instead of bins;
+  a new drift field at every pick (a new "pluck"); borrowing the pick noise of another, similar note.
+
+### 16.8 "Analyse and play again" on the DI (user choice 2026-11-24)  **[FIRST VERSION — waiting for the user to listen]**
+User: Studio still sounds quite different from the true quad. Why: the true takes are made from the note list
+(new overtone phases and new pick noise per take); the doubler only bends one recording, so it keeps its fine
+detail. User chose: (1) analyse the recording and play each take again; (2) work on the **clean DI**, one take per
+track: duplicate the DI track 2–4 times, set the plugin to Take 1 … Take 4 (same seed), each with its own amp sim.
+
+- Code: `reference/tp_double_resynth.py` (`Resynth`, `ResynthDoubler`), tests `reference/resynth_tests.py`.
+- Analysis = `tp_offline.Offline` at 0 semitones (picks, overtone tracks with fitted level curves, residual).
+  Tracks explain the input: residual −24 to −26 dB of it.
+- A take: every overtone keeps its level and frequency curve; every stretch that starts at a pick gets a random
+  start phase (a new pluck). The residual gets random phases (STFT 256 / 64) and its old short-time level.
+  Then `StudioDoubler` timing, pitch, level and tone per pick, with each take's own source.
+- `StudioDoubler` keeps every finished take in `take_signals` (for take-per-track output and the tests).
+- Results (each take through its own amp): quad comb, bend / play again / true quad: chug 0.069 / 0.068 / 0.057,
+  chords 0.058 / 0.061 / 0.058, lead 0.073 / 0.108 / 0.064. **With one amp per take, even bent copies come close.**
+- The lead's 0.108 is a fault of the measure, not a flanger: the peak sits at the notes' own period (3–5 ms),
+  because the new residual fills the gaps between overtones differently from the input. The synthetic true takes
+  have no noise between overtones. New overtone phases with the old residual: 0.064; old phases with new residual:
+  0.060. A better flanger measure is needed for this engine (open).
+- Listening files: bend / play again / true, double and quad, each take through its own amp.
+- Open: per-pick pitch in this engine still comes from the varispeed; the analysis could play each pick at its own
+  pitch instead. Real DI recordings not tested yet (the synthetic guitar has no string noise, so play-again and
+  bend may sound closer than they will on a real guitar).
+

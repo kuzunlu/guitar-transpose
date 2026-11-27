@@ -37,3 +37,15 @@ One line per decision, newest last. Numbers are in `docs/RESULTS.md`.
 - 2026-11-13 — "Birth picks" tried and switched off (no gain). "Ring-on" split kept on (fires rarely, no harm measured).
 - 2026-11-13 — `render.py` has engine `O`. Its output is shifted back to zero latency.
 - 2026-11-13 — Rule for every engine: `reset()`, `latencySamples()` and `process()` must be safe before `prepare()` and with 0 channels. Tested in `tests/SignalsmithEngineTests.cpp`.
+- 2026-11-23 — Doubler added to the plan (PLAN 16): one plugin with Transpose → Doubler sections, used after the amp, original kept as take 1, per-note varispeed takes, stepped look-ahead x as latency, wide-range randomness knobs.
+- 2026-11-23 — Final identity before first release: company "Kursat", product "Guitar Tools", code `Kuzu` + new plugin code. First release v0.1.0 with Transpose marked beta, installer made like Guitar Lab's.
+- 2026-11-24 — Doubler has no latency setting and reports 12 samples (the interpolator's fixed delay). The per-note human timing on top is not reported: it is the effect, it changes per note and with the Timing knob. User chose this over reporting the average timing.
+- 2026-11-24 — The original is a take too, with timing changes only (user's "option B"): every take lands 0.25 ms up to the timing spread after the input, so the order of the takes is mixed note by note. A fixed delay on the original (option A) was rejected: it is waiting time, not processing time.
+- 2026-11-24 — Doubler pick detector listens above 1.5 kHz: `detect_onsets` finds 1 of 24 picks after distortion. Between picks, takes change timing with matched splices every ~300 ms, so missed picks cost nothing.
+- 2026-11-24 — Doubler decorrelation filter (velvet noise) first dropped: no change in coherence, peaks up to 2.5× higher.
+- 2026-11-24 — Velvet filter back, on by default (15 ms, above 600 Hz, copies only): the user heard flanger / phaser in quad. It halves the comb in one speaker (0.15 → 0.07; true quad 0.05). New "comb" measure in `double_tests.py`.
+- 2026-11-24 — Doubler Studio mode (PLAN 16.7): look-ahead pick finder, note-anchored timing around a grid 50 ms back, overtone drift on the copies instead of the velvet filter. User: in Studio, latency does not matter, only quality.
+- 2026-11-24 — Studio overtone drift is phase locked, restarts at every attack and adds a 15-cent / 40 ms attack detune per overtone. The per-bin drift smeared attacks and lost up to 2.3 dB on the copies, which the user heard as phaser and a left lean.
+- 2026-11-24 — Studio doubler moves to the DI, one take per track (each take gets its own amp sim), and gets an "analyse and play again" engine (`tp_double_resynth.py`): new overtone phases per pick and new residual detail per take. User's choice.
+
+- 2026-11-26 — Releases are built on the user's PC by a PowerShell script (CMake, Inno Setup, `gh release create`), not GitHub Actions.
