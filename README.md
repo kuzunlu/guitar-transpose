@@ -41,4 +41,5 @@ python render.py in.wav out.wav -2
 
 ## License
 
-No license yet. All rights reserved.
+All rights reserved. You may read the code, but not copy or reuse it.
+JUCE is used under its free Starter licence.

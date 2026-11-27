@@ -49,3 +49,4 @@ One line per decision, newest last. Numbers are in `docs/RESULTS.md`.
 - 2026-11-24 — Studio doubler moves to the DI, one take per track (each take gets its own amp sim), and gets an "analyse and play again" engine (`tp_double_resynth.py`): new overtone phases per pick and new residual detail per take. User's choice.
 
 - 2026-11-26 — Releases are built on the user's PC by a PowerShell script (CMake, Inno Setup, `gh release create`), not GitHub Actions.
+- 2026-11-27 — JUCE is used under the free Starter licence, not AGPLv3, so selling stays possible. The repo is public with no LICENSE file (all rights reserved). The installer must ship the MIT notices of Signalsmith and the VST3 SDK.

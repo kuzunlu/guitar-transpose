@@ -981,6 +981,7 @@ No lean: the original is late as often as the copies, so no side is always first
 3. Plugin: rename identity, parameters, sections, latency = transpose latency + x.
 4. UI in the Guitar Lab look, with Stage + Takes view.
 5. Installer + local release script + README/manual, v0.1.0. Ask before tag and push.
+   The installer ships a third-party notices file (MIT: Signalsmith Stretch, Signalsmith Linear, VST3 SDK). JUCE is used under Starter.
 
 ### 16.5 Open
 - User asked what happens in Neural DSP with the two cab mics panned hard L/R and the Doubler on. Their manual
